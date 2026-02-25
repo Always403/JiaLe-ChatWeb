@@ -11,10 +11,9 @@ import java.util.List;
         size = 1024, flushInterval = 60000, readWrite = false)
 public interface MessageMapper {
     @Insert("""
-        INSERT INTO messages(conversation_id, group_id, sender_id, receiver_id, content, content_type, is_read, created_at)
-        VALUES(#{conversationId}, #{groupId}, #{senderId}, #{receiverId}, #{content}, #{contentType}, #{isRead}, NOW())
+        INSERT INTO messages(id, conversation_id, group_id, sender_id, receiver_id, content, content_type, is_read, created_at)
+        VALUES(#{id}, #{conversationId}, #{groupId}, #{senderId}, #{receiverId}, #{content}, #{contentType}, #{isRead}, #{createdAt})
         """)
-    @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ChatMessage msg);
 
     @Select("""

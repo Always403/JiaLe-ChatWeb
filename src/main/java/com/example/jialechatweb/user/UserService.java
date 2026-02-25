@@ -43,12 +43,11 @@ public class UserService {
         user.setDisplayName(displayName);
         userMapper.insert(user);
         
-        // Auto-join Public Channel (Group ID 1)
-        try {
-            groupMapper.addMember(1L, user.getId());
-        } catch (Exception e) {
-            // Ignore if group doesn't exist or already member
-            System.err.println("Auto-join public channel failed: " + e.getMessage());
+        if (groupMapper != null) {
+            try {
+                groupMapper.addMember(1L, user.getId());
+            } catch (Exception ignored) {
+            }
         }
         
         return user;

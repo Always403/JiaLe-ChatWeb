@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -27,20 +28,24 @@ public class MessageController {
                                   @RequestParam(defaultValue = "50") int limit,
                                   @RequestParam(defaultValue = "0") int offset,
                                   @RequestAttribute("currentUserId") Long userId) {
+        List<ChatMessage> messages;
         if (groupId != null) {
-            List<ChatMessage> messages = messageMapper.listGroupMessages(groupId, limit, offset);
+            messages = messageMapper.listGroupMessages(groupId, limit, offset);
             messages.forEach(msg -> {
                 if (msg.getSenderAvatar() != null) {
                     msg.setSenderAvatar(ossService.generateSignedUrl(msg.getSenderAvatar()));
                 }
             });
-            return ResponseEntity.ok(messages);
         } else if (friendId != null) {
             // Mark messages as read
             messageMapper.markReadP2P(userId, friendId);
-            return ResponseEntity.ok(messageMapper.listP2P(userId, friendId, limit, offset));
+            messages = messageMapper.listP2P(userId, friendId, limit, offset);
         } else {
             return ResponseEntity.badRequest().body("friendId or groupId is required");
         }
+        
+        // Reverse the list so the oldest messages are first (top), newest last (bottom)
+        Collections.reverse(messages);
+        return ResponseEntity.ok(messages);
     }
 }

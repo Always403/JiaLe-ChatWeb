@@ -511,8 +511,30 @@ async function loadMessages() {
 function renderMessage(msg) {
   // Ensure strict comparison handles both string and number types correctly
   const isMe = String(msg.senderId) === String(state.me.id);
+
+  // ACK/Duplicate Handling
+  if (msg.id && document.querySelector(`.message[data-msg-id="${msg.id}"]`)) return;
+  if (msg.tempId) {
+    const tempEl = document.querySelector(`.message[data-temp-id="${msg.tempId}"]`);
+    if (tempEl) {
+      tempEl.setAttribute('data-msg-id', msg.id);
+      tempEl.removeAttribute('data-temp-id');
+      const spinner = tempEl.querySelector('.fa-spinner');
+      if (spinner) spinner.remove();
+      if (msg.timestamp || msg.createdAt) {
+        const d = new Date(msg.timestamp || msg.createdAt);
+        const t = d.toLocaleTimeString('zh-CN', {hour12: false, hour: '2-digit', minute:'2-digit'});
+        const meta = tempEl.querySelector('.message-meta');
+        if (meta) meta.innerText = t; // Update time to server time
+      }
+      return;
+    }
+  }
+
   const div = document.createElement("div");
   div.className = `message ${isMe ? 'message-out' : 'message-in'}`;
+  if (msg.id) div.setAttribute('data-msg-id', msg.id);
+  if (msg.tempId) div.setAttribute('data-temp-id', msg.tempId);
   
   let senderHtml = "";
   if (!isMe && state.currentGroupId) {
@@ -533,8 +555,64 @@ function renderMessage(msg) {
     contentHtml = `<div class="bubble">${escapeHtml(msg.content)}</div>`;
   }
   
-  const timeStr = new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  div.innerHTML = senderHtml + contentHtml + `<div class="message-meta">${timeStr}</div>`;
+  // Ensure date is parsed in local time zone, but handle UTC string from backend
+  const date = new Date(msg.createdAt);
+  
+  // If the backend returns UTC time (e.g. ends with 'Z' or no timezone), new Date() parses it as UTC.
+  // But if the backend returns a local time string without timezone (e.g. "2024-02-24T12:00:00"), 
+  // new Date() might interpret it as local time directly.
+  // Given we are in China (UTC+8), let's ensure we are comparing dates correctly in local time.
+  
+  const now = new Date();
+  let timeStr;
+  
+  // Helper to get date string in local time (YYYY-MM-DD) for comparison
+  const toLocalDateString = (d) => {
+    return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  };
+  
+  const dateStr = toLocalDateString(date);
+  const todayStr = toLocalDateString(now);
+  
+  const isToday = dateStr === todayStr;
+  
+  // Create a clone of 'now' for yesterday check
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = toLocalDateString(yesterday) === dateStr;
+  
+  // Check if same week (assuming week starts on Monday)
+  const currentDay = now.getDay() || 7; // 1 (Mon) - 7 (Sun)
+  const currentWeekMonday = new Date(now);
+  currentWeekMonday.setDate(now.getDate() - currentDay + 1);
+  currentWeekMonday.setHours(0, 0, 0, 0);
+  
+  // End of this week (Next Monday)
+  const nextWeekMonday = new Date(currentWeekMonday);
+  nextWeekMonday.setDate(currentWeekMonday.getDate() + 7);
+  
+  // For week comparison, check if date is within [currentWeekMonday, nextWeekMonday)
+  const isSameWeek = date >= currentWeekMonday && date < nextWeekMonday;
+  const isSameYear = date.getFullYear() === now.getFullYear();
+ 
+  // Format time part: HH:mm (24-hour format)
+  const timePart = date.toLocaleTimeString('zh-CN', {hour12: false, hour: '2-digit', minute:'2-digit'});
+  
+  if (isToday) {
+    timeStr = timePart;
+  } else if (isYesterday) {
+    timeStr = "昨天 " + timePart;
+  } else if (isSameWeek) {
+    // If it is same week but NOT today and NOT yesterday
+    const weekDays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+    timeStr = weekDays[date.getDay()] + " " + timePart;
+  } else if (isSameYear) {
+    timeStr = (date.getMonth() + 1) + "/" + date.getDate() + " " + timePart;
+  } else {
+    timeStr = date.getFullYear() + "/" + (date.getMonth() + 1) + "/" + date.getDate() + " " + timePart;
+  }
+  
+  div.innerHTML = senderHtml + contentHtml + `<div class="message-meta">${timeStr}${msg.isTemp ? ' <i class="fas fa-spinner fa-spin text-xs"></i>' : ''}</div>`;
   els.messages.appendChild(div);
 }
 
@@ -557,12 +635,17 @@ async function sendMessage() {
   if (content.length > 1000) return showToast("消息过长，请控制在1000字以内", "warning");
   if (!state.currentFriend && !state.currentGroupId) return;
   
-  const data = { content, contentType: "text" };
+  const tempId = crypto.randomUUID();
+
+  const data = { content, contentType: "text", tempId: tempId };
   if (state.currentGroupId) {
     data.groupId = state.currentGroupId;
   } else {
     data.receiverId = state.currentFriend;
   }
+
+  renderMessage({ ...data, senderId: state.me.id, createdAt: new Date(), isTemp: true, tempId: tempId });
+  scrollToBottom();
 
   state.ws.send(JSON.stringify({
     type: "send",
@@ -648,7 +731,9 @@ function connectWS() {
   state.ws.onopen = () => { state.reconnectAttempts = 0; console.log("WS Connected"); };
   state.ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === 'message') {
+    if (msg.type === 'ack') {
+      renderMessage(msg.data);
+    } else if (msg.type === 'message') {
       const data = msg.data;
       // Convert to string for safe comparison
       const senderId = String(data.senderId);

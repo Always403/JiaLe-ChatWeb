@@ -41,6 +41,41 @@ public class RedisMessaging implements MessageListener {
         }
     }
 
+    public void addOfflineMessage(Long userId, Object payload) {
+        try {
+            String json = objectMapper.writeValueAsString(payload);
+            redisTemplate.opsForList().rightPush("offline:msg:" + userId, json);
+            // Expire after 7 days
+            redisTemplate.expire("offline:msg:" + userId, java.time.Duration.ofDays(7));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public java.util.List<String> getAndClearOfflineMessages(Long userId) {
+        String key = "offline:msg:" + userId;
+        // Retrieve all messages
+        java.util.List<String> messages = redisTemplate.opsForList().range(key, 0, -1);
+        if (messages == null || messages.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        // Clear the list safely preventing race condition
+        redisTemplate.opsForList().trim(key, messages.size(), -1);
+        return messages;
+    }
+
+    public void markUserOnline(Long userId) {
+        redisTemplate.opsForValue().set("online:" + userId, "1", java.time.Duration.ofMinutes(10)); // Heartbeat ttl
+    }
+
+    public void markUserOffline(Long userId) {
+        redisTemplate.delete("online:" + userId);
+    }
+
+    public boolean isUserOnline(Long userId) {
+        return Boolean.TRUE.equals(redisTemplate.hasKey("online:" + userId));
+    }
+
     @Override
     public void onMessage(Message message, byte[] pattern) {
         if (handler != null) {

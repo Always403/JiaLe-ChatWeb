@@ -27,17 +27,23 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final com.example.jialechatweb.chat.ContentFilterService contentFilterService;
     private final RedisMessaging redisMessaging;
     private final OssService ossService;
+    private final java.time.Clock clock;
+    private final com.example.jialechatweb.util.SnowflakeIdGenerator snowflakeIdGenerator;
 
     public ChatWebSocketHandler(MessageMapper messageMapper, 
                                 com.example.jialechatweb.user.UserMapper userMapper,
                                 com.example.jialechatweb.chat.ContentFilterService contentFilterService,
                                 ObjectProvider<RedisMessaging> redisMessagingProvider,
-                                OssService ossService) {
+                                OssService ossService,
+                                java.time.Clock clock,
+                                com.example.jialechatweb.util.SnowflakeIdGenerator snowflakeIdGenerator) {
         this.messageMapper = messageMapper;
         this.userMapper = userMapper;
         this.contentFilterService = contentFilterService;
         this.redisMessaging = redisMessagingProvider.getIfAvailable();
         this.ossService = ossService;
+        this.clock = clock;
+        this.snowflakeIdGenerator = snowflakeIdGenerator;
         if (this.redisMessaging != null) {
             this.redisMessaging.setHandler(this::handleBroadcast);
         }
@@ -63,6 +69,27 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (userId != null) {
             sessions.put(userId, session);
             System.out.println("WS Connected: User " + userId);
+            
+            // Mark online
+            if (redisMessaging != null) {
+                redisMessaging.markUserOnline(userId);
+                
+                // Push offline messages
+                java.util.List<String> offlineMsgs = redisMessaging.getAndClearOfflineMessages(userId);
+                if (!offlineMsgs.isEmpty()) {
+                    for (String msgJson : offlineMsgs) {
+                        try {
+                            // Directly send raw JSON string since it's already serialized
+                            synchronized (session) {
+                                session.sendMessage(new TextMessage(msgJson));
+                            }
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            }
+            
             broadcastOnlineCount();
         }
     }
@@ -73,6 +100,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         Long userId = (Long) session.getAttributes().get("userId");
         if (userId != null) {
             sessions.remove(userId);
+            if (redisMessaging != null) {
+                redisMessaging.markUserOffline(userId);
+            }
             System.out.println("WS Closed: User " + userId + " Status: " + status);
             broadcastOnlineCount();
         }
@@ -110,11 +140,19 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             // conversationId can be left null or set to something specific if needed
         } else {
             // P2P chat
-            long min = Math.min(senderId, receiverId);
-            long max = Math.max(senderId, receiverId);
-            conversationId = (min << 32) | (max & 0xFFFFFFFFL);
-            msg.setConversationId(conversationId);
+            if (receiverId != null) {
+                long min = Math.min(senderId, receiverId);
+                long max = Math.max(senderId, receiverId);
+                conversationId = (min << 32) | (max & 0xFFFFFFFFL);
+                msg.setConversationId(conversationId);
+            }
         }
+        
+        // Generate ID using Snowflake
+        long id = snowflakeIdGenerator.nextId();
+        msg.setId(id);
+        // Fix: Set createdAt using NTP clock to ensure consistent timezone (UTC+8) regardless of system time
+        msg.setCreatedAt(java.time.Instant.now(clock));
 
         try {
             messageMapper.insert(msg);
@@ -125,6 +163,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             payload.put("senderId", String.valueOf(senderId));
             payload.put("content", msg.getContent());
             payload.put("contentType", msg.getContentType());
+            payload.put("timestamp", msg.getCreatedAt().toEpochMilli()); // Add timestamp for ACK/Sync
             
             if (conversationId != null) payload.put("conversationId", String.valueOf(conversationId));
             if (receiverId != null) payload.put("receiverId", String.valueOf(receiverId));
@@ -134,6 +173,27 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     payload.put("senderName", u.getDisplayName());
                     payload.put("senderAvatar", ossService.generateSignedUrl(u.getAvatarUrl()));
                 });
+            }
+
+            // Send ACK to sender
+            if (data.hasNonNull("tempId")) {
+                String tempId = data.get("tempId").asText();
+                // Add tempId to payload so sender can identify it in broadcast if broadcast arrives before ACK
+                payload.put("tempId", tempId);
+                
+                Map<String, Object> ackData = new java.util.HashMap<>();
+                ackData.put("tempId", tempId);
+                ackData.put("id", String.valueOf(id));
+                ackData.put("timestamp", msg.getCreatedAt().toEpochMilli());
+                sendToUser(senderId, new Event("ack", ackData));
+            }
+
+            // Check if receiver is online, if not, queue it
+            if (redisMessaging != null && receiverId != null) {
+                if (!redisMessaging.isUserOnline(receiverId)) {
+                    // Queue for offline push
+                    redisMessaging.addOfflineMessage(receiverId, new Event("message", payload));
+                }
             }
 
             broadcast(new Event("message", payload));

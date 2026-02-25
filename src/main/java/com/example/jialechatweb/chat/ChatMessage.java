@@ -2,6 +2,7 @@ package com.example.jialechatweb.chat;
 
 import java.time.Instant;
 import java.io.Serializable;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
@@ -20,6 +21,7 @@ public class ChatMessage implements Serializable {
     private String content;
     private String contentType; // text|image|file|emoji
     private Boolean isRead;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "GMT+8")
     private Instant createdAt;
 
     // Transient fields for display
