@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="description" content="JiaLe Chat - 一个现代、安全、实时的即时通讯应用。支持私聊、群聊、文件传输。">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="app-version" content="1.0.0">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://chat.example.com/">
+  <meta property="og:title" content="JiaLe Chat - 实时通讯平台">
+  <meta property="og:description" content="连接你我，畅聊无限。支持多设备同步，实时消息推送。">
+  <meta property="og:image" content="https://ui-avatars.com/api/?name=JiaLe+Chat&background=6366f1&color=fff&size=512">
+
+  <title>JiaLe Chat - 实时通讯</title>
+  
+  <!-- 引入 Google Fonts 和 FontAwesome -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Local Font Awesome -->
+  <link rel="stylesheet" href="assets/fontawesome.css">
+  <link rel="stylesheet" href="assets/styles.css">
+  
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+</head>
+<body>
+  <div id="toast-container" class="toast-container"></div>
+
+  <div id="globalErrorBanner" class="global-error-banner hidden">
+    <div class="global-error-main">
+      <div class="global-error-title">发生异常</div>
+      <div data-error-message class="global-error-message"></div>
+      <div class="global-error-meta">
+        <span data-error-details></span>
+      </div>
+    </div>
+    <div class="global-error-actions">
+      <button id="globalErrorReload" class="btn btn-primary btn-sm">刷新页面</button>
+      <button id="globalErrorHome" class="btn btn-secondary btn-sm">返回首页</button>
+      <button id="globalErrorCopy" class="btn btn-secondary btn-sm">复制错误详情</button>
+      <button id="globalErrorClose" class="btn-icon">✕</button>
+    </div>
+  </div>
+
+  <div id="fallbackScreen" class="fallback-screen hidden">
+    <div class="fallback-card">
+      <h2>页面出现问题</h2>
+      <p id="fallbackMessage">系统已记录错误，请尝试刷新或返回首页</p>
+      <div class="fallback-actions">
+        <button id="fallbackReload" class="btn btn-primary">刷新页面</button>
+        <button id="fallbackHome" class="btn btn-secondary">返回首页</button>
+        <button id="fallbackCopy" class="btn btn-secondary">复制错误详情</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 登录/注册页 -->
+  <div id="auth-screen" class="auth-container">
+    <div class="auth-header">
+      <h1>JiaLe Chat</h1>
+      <p class="text-secondary">连接你我，畅聊无限</p>
+    </div>
+    <div id="authError" class="auth-error hidden"></div>
+    
+    <div class="form-group" id="username-field">
+      <input id="username" class="form-input" placeholder="账号/邮箱" autocomplete="username">
+    </div>
+    <div class="form-group" id="password-field">
+      <input id="password" type="password" class="form-input" placeholder="密码" autocomplete="current-password">
+    </div>
+    <div class="form-group hidden" id="register-fields">
+      <input id="displayName" class="form-input" placeholder="设置昵称" autocomplete="nickname">
+    </div>
+    <div class="form-group hidden" id="email-field">
+      <input id="email" type="email" class="form-input" placeholder="邮箱地址" autocomplete="email">
+    </div>
+    <div class="form-group hidden flex gap-2" id="code-field">
+      <input id="verifyCode" class="form-input" placeholder="验证码" style="flex: 1;">
+      <button id="sendCodeBtn" class="btn btn-secondary" style="white-space: nowrap;">获取验证码</button>
+    </div>
+    <div class="form-group hidden" id="new-password-field">
+      <input id="newPassword" type="password" class="form-input" placeholder="新密码" autocomplete="new-password">
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <button id="mainBtn" class="btn btn-primary btn-block">登录</button>
+      <button id="switchBtn" class="btn btn-secondary btn-block">没有账号？去注册</button>
+      <button id="forgotBtn" class="btn btn-text btn-sm text-secondary" style="margin-top: 5px;">忘记密码？</button>
+    </div>
+  </div>
+
+  <!-- 主聊天界面 -->
+  <div id="chat-screen" class="app-container hidden">
+    <!-- 侧边栏 -->
+    <div id="sidebar" class="sidebar">
+      <div class="user-profile">
+        <div class="flex items-center gap-2">
+          <img id="my-avatar" class="avatar" src="https://ui-avatars.com/api/?name=User&background=random" alt="Me" loading="lazy">
+          <div class="flex-col">
+            <div id="meName" class="font-bold">加载中...</div>
+            <div class="flex items-center gap-1 text-xs text-secondary">
+              <span id="meId">ID: --</span>
+              <span class="mx-1">|</span>
+              <span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+              <span id="onlineCount">1</span>在线
+            </div>
+          </div>
+          <button id="openSettings" class="btn-icon" style="margin-left: auto;" title="设置">
+             <i class="fas fa-cog"></i>
+          </button>
+          <button id="logoutBtn" class="btn-icon" title="退出登录">
+            <i class="fas fa-sign-out-alt"></i>
+          </button>
+        </div>
+      </div>
+      
+      <div class="search-bar">
+        <div style="position: relative;">
+          <i class="fas fa-search" style="position: absolute; left: 10px; top: 10px; color: var(--text-muted);"></i>
+          <input type="text" class="search-input" placeholder="搜索好友..." style="padding-left: 32px;">
+        </div>
+      </div>
+
+      <div class="add-friend-entry flex justify-between">
+         <button id="addFriendBtn" class="btn btn-primary btn-sm w-full" style="margin-right: 5px;">
+           <i class="fas fa-user-plus"></i> 添加好友
+         </button>
+         <button id="publicChannelBtn" class="btn btn-secondary btn-sm w-full">
+           <i class="fas fa-users"></i> 公共频道
+         </button>
+      </div>
+      
+      <div class="flex justify-between px-4 pb-2">
+        <span class="text-xs text-secondary font-bold">好友列表</span>
+        <div id="openFriendRequests" class="text-xs text-primary cursor-pointer hover:underline flex items-center gap-1">
+           好友请求
+           <span id="friendRequestBadge" class="badge hidden">0</span>
+        </div>
+      </div>
+
+      <div id="friendList" class="friend-list">
+        <!-- 好友列表项 -->
+      </div>
+    </div>
+
+    <!-- 聊天区域 -->
+    <div id="chat-area" class="chat-area">
+      <!-- 聊天头部 -->
+      <div class="chat-header">
+        <div class="flex items-center">
+          <button id="backBtn" class="btn-icon back-btn">
+            <i class="fas fa-arrow-left"></i>
+          </button>
+          <div class="chat-title ml-2">
+            <h2 id="currentChatName">选择一个好友开始聊天</h2>
+            <div id="typingIndicator" class="typing-indicator hidden">对方正在输入...</div>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <!-- 头部操作按钮 -->
+        </div>
+      </div>
+
+      <!-- 消息列表 -->
+      <div id="messages" class="messages-container">
+        <div class="empty-state">
+          <i class="fas fa-comments"></i>
+          <p>选择左侧好友或公共频道开始聊天</p>
+        </div>
+      </div>
+
+      <!-- 输入区域 -->
+      <div class="input-area">
+        <button id="fileBtn" class="btn-icon" title="发送文件">
+          <i class="fas fa-paperclip"></i>
+        </button>
+        <input type="file" id="fileInput" hidden>
+        
+        <button id="emojiBtn" class="btn-icon" title="表情">
+          <i class="far fa-smile"></i>
+        </button>
+        
+        <textarea id="msgInput" class="message-input" rows="1" placeholder="输入消息..."></textarea>
+        
+        <button id="sendBtn" class="btn btn-primary btn-icon" style="border-radius: 50%;">
+          <i class="fas fa-paper-plane"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <!-- 添加好友弹窗 -->
+  <div id="addFriendModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>添加好友</h3>
+        <button id="addFriendClose" class="btn-icon"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary text-sm mb-2">输入对方账号进行查找</p>
+        <input id="addFriendAccount" class="form-input" placeholder="输入用户账号...">
+        <div id="addFriendSuggestions" class="suggestions hidden"></div>
+        <div id="addFriendHint" class="status-text hidden"></div>
+        <div id="addFriendStatus" class="status-text hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="addFriendWithdraw" class="btn btn-secondary hidden">撤回请求</button>
+        <button id="addFriendCancel" class="btn btn-secondary">取消</button>
+        <button id="addFriendSend" class="btn btn-primary" disabled>发送请求</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 好友请求列表弹窗 -->
+  <div id="friendRequestModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>好友请求</h3>
+        <button id="friendRequestRefresh" class="btn-icon" title="刷新"><i class="fas fa-sync-alt"></i></button>
+        <button id="friendRequestClose" class="btn-icon"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="friendRequestList" class="request-list">
+           <!-- 请求项 -->
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 设置弹窗 -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>设置</h3>
+        <button id="settingsClose" class="btn-icon"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body flex flex-col gap-4">
+        <div>
+          <h4 class="mb-2">基本信息</h4>
+          <div class="mb-4">
+            <label class="block text-sm font-bold mb-1 text-secondary">昵称</label>
+            <div class="flex gap-2">
+                <input id="settingDisplayName" class="form-input flex-1" placeholder="输入新昵称" maxlength="50">
+                <button id="saveDisplayNameBtn" class="btn btn-primary btn-sm" style="white-space: nowrap;">保存</button>
+            </div>
+          </div>
+
+          <h4 class="mb-2">头像设置</h4>
+          <div class="flex items-center gap-4">
+             <div class="relative">
+               <img id="settingAvatarPreview" src="" class="w-16 h-16 rounded-full object-cover bg-gray-200">
+               <label for="avatarInput" class="absolute bottom-0 right-0 bg-primary text-white rounded-full p-1 cursor-pointer shadow-sm hover:bg-primary-dark transition-colors" style="background: var(--accent-color); width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+                 <i class="fas fa-camera" style="font-size: 12px; color: white;"></i>
+               </label>
+             </div>
+             <div>
+               <p class="font-bold text-sm">更换头像</p>
+               <p class="text-xs text-muted">点击相机图标上传</p>
+             </div>
+          </div>
+          <input type="file" id="avatarInput" hidden accept="image/*">
+          <div id="uploadProgress" class="hidden text-xs text-primary mt-1">上传中...</div>
+          <button id="uploadAvatarBtn" class="btn btn-primary btn-sm mt-2" disabled>上传并保存</button>
+          
+          <div class="mt-4">
+            <p class="text-sm font-bold mb-2">历史头像</p>
+            <div id="avatarHistoryList" class="flex gap-2 overflow-x-auto pb-2" style="scrollbar-width: thin;">
+              <!-- History items -->
+            </div>
+          </div>
+        </div>
+        
+        <div style="border-top: 1px solid var(--border-color); padding-top: 1rem;">
+          <h4 class="mb-2">通知与音效</h4>
+          <div class="flex items-center justify-between mb-2">
+            <span>消息提示音</span>
+            <label class="switch">
+              <input type="checkbox" id="settingSoundEnabled" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+           <div class="flex items-center justify-between">
+            <span>免打扰模式 (23:00-07:00)</span>
+            <input type="checkbox" id="settingDndEnabled">
+          </div>
+          <button id="testSoundBtn" class="btn btn-secondary btn-sm mt-2">测试音效</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
